@@ -1,0 +1,286 @@
+{% comment %}
+  Bundle Customizer - Shows bundle components
+  
+  Always displays bundle components when bundle_config metafield exists.
+  Enables variant selection if allow_customization is true.
+  Saves human-readable values for customer view and IDs in hidden fields for backend processing.
+  
+  Usage: {% render 'bundle-customizer', product: product %}
+{% endcomment %}
+
+{% assign bundle_config = product.metafields.custom.bundle_config.value %}
+
+{% if bundle_config %}
+  
+  {% if bundle_config.is_bundle %}
+    <div class="bundle-info" id="bundle-info" 
+         data-bundle-price="{{ product.selected_or_first_available_variant.price | divided_by: 100.0 }}"
+         data-bundle-title="{{ product.title }}">
+      <h3 class="bundle-info__title">Este Pack Incluye:</h3>
+      
+      <div class="bundle-components">
+        {% for component in bundle_config.components %}
+          <div class="bundle-component" data-component-index="{{ forloop.index0 }}">
+            {% assign clean_title = component.product_title | split: ' - ' | first %}
+            
+            {% comment %} Show variant buttons if customization is allowed {% endcomment %}
+            {% if bundle_config.allow_customization and component.allow_variant_selection and component.available_variants.size > 1 %}
+              {% assign default_variant = component.available_variants | where: "id", component.default_variant_id | first | default: component.available_variants.first %}
+              {% assign default_variant_value = default_variant.title | split: ' - ' | last %}
+              
+              <div class="component-title-main">
+                {{ clean_title }}: <strong class="selected-value" data-component-index="{{ forloop.index0 }}">{{ default_variant_value }}</strong>
+              </div>
+              
+              <div class="component-variant-buttons">
+                {% for variant in component.available_variants %}
+                  {% assign variant_value = variant.title | split: ' - ' | last %}
+                  <button 
+                    type="button"
+                    class="variant-button {% if variant.id == component.default_variant_id %}active{% endif %}"
+                    data-variant-id="{{ variant.id }}"
+                    data-variant-title="{{ variant_value }}"
+                    data-price="{{ variant.price }}"
+                    data-component-index="{{ forloop.parentloop.index0 }}">
+                    {{ variant_value }}
+                  </button>
+                {% endfor %}
+              </div>
+              
+              {% comment %} Human-readable value (shown to customer) - formatted as "1 x Product Variant" {% endcomment %}
+              <input type="hidden" 
+                name="properties[Item {{ forloop.index }}]" 
+                value="{{ component.quantity }} x {{ clean_title }} {{ default_variant_value }}"
+                class="component-variant-input"
+                data-component-index="{{ forloop.index0 }}">
+            {% else %}
+              {% comment %} Component without variant selection {% endcomment %} 
+              {% assign default_variant = component.available_variants.first %}
+              {% assign variant_display = default_variant.title | split: ' - ' | last | default: "Standard" %}
+              <div class="component-label">
+                <strong>{{ clean_title }}:</strong> {{ variant_display }}
+              </div>
+              
+              {% comment %} Human-readable value - formatted as "1 x Product Variant" {% endcomment %}
+              <input type="hidden" 
+                name="properties[Item {{ forloop.index }}]" 
+                value="{{ component.quantity }} x {{ clean_title }} {{ variant_display }}">
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      
+
+    </div>
+
+    <style>
+    .bundle-info {
+      margin: 0;
+      padding: 0;
+      border: none;
+      background: transparent;
+    }
+
+    .bundle-info__title {
+      display: none;
+    }
+
+    .bundle-components {
+      display: block;
+    }
+
+    .bundle-component {
+      padding: 0;
+      background: transparent;
+      border: none;
+      margin-bottom: 30px;
+    }
+
+    .bundle-component:last-child {
+      margin-bottom: 0;
+    }
+
+    .component-title-main {
+      font-family: Montserrat, sans-serif;
+      font-weight: 500;
+      color: #000;
+      font-size: 14px;
+      line-height: 22.4px;
+      margin-bottom: 10px;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .component-title-main strong {
+      font-weight: 700;
+    }
+
+    .component-label {
+      font-family: Montserrat, sans-serif;
+      font-weight: 500;
+      color: #000;
+      font-size: 14px;
+      line-height: 22.4px;
+      margin-bottom: 10px;
+      display: block;
+    }
+
+    .component-label strong {
+      font-weight: 700;
+    }
+
+    .component-variant-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0;
+    }
+
+    .variant-button {
+      padding: 10px 20px;
+      border: 1px solid #d1d1d1;
+      background: #fff;
+      color: #000;
+      font-family: Montserrat, sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border-radius: 3px;
+      min-width: 60px;
+      text-align: center;
+      line-height: 1.2;
+    }
+
+    .variant-button:hover {
+      border-color: #000;
+    }
+
+    .variant-button.active {
+      background: #db1215;
+      color: #fff;
+      border-color: #db1215;
+    }
+
+    .variant-button:focus {
+      outline: none;
+    }
+
+    @media (max-width: 768px) {
+      .bundle-component {
+        margin-bottom: 24px;
+      }
+      
+      .variant-button {
+        flex: 0 0 auto;
+        min-width: 60px;
+        padding: 10px 18px;
+      }
+    }
+    </style>
+
+    <script>
+    // Reposition bundle customizer after price
+    document.addEventListener('DOMContentLoaded', function() {
+      const bundleInfo = document.getElementById('bundle-info');
+      if (!bundleInfo) return;
+      
+      // Find price element
+      const priceElement = document.querySelector('.hdt-product__price');
+      if (priceElement) {
+        // Move bundle info right after price
+        priceElement.parentNode.insertBefore(bundleInfo, priceElement.nextSibling);
+      }
+    });
+    
+    // Bundle customizer: button variant selection + validation
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.querySelector('form[action="/cart/add"]');
+      const bundleInfo = document.getElementById('bundle-info');
+      
+      if (!form || !bundleInfo) return;
+      
+      const variantButtons = document.querySelectorAll('.variant-button');
+      const priceDisplay = document.querySelector('.price-item--regular');
+      
+      // Store selected variant IDs for each component
+      const selectedVariants = {};
+      
+      // Handle variant button clicks
+      variantButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const componentIndex = this.dataset.componentIndex;
+          const variantId = this.dataset.variantId;
+          const variantTitle = this.dataset.variantTitle || this.textContent.trim();
+          const variantText = this.textContent.trim();
+          
+          // Store the selected variant ID
+          selectedVariants[componentIndex] = variantId;
+          
+          // Remove active class from siblings
+          const siblings = this.parentElement.querySelectorAll('.variant-button');
+          siblings.forEach(btn => btn.classList.remove('active'));
+          
+          // Add active class to clicked button
+          this.classList.add('active');
+          
+          // Update label with selected value
+          const label = document.querySelector(`.selected-value[data-component-index="${componentIndex}"]`);
+          if (label) {
+            label.textContent = variantText;
+          }
+          
+          // Update total price
+          updateTotalPrice();
+        });
+      });
+      
+      // Update total price calculation
+      function updateTotalPrice() {
+        if (!priceDisplay) return;
+        
+        let total = 0;
+        const components = document.querySelectorAll('.bundle-component');
+        
+        components.forEach(component => {
+          const activeButton = component.querySelector('.variant-button.active');
+          if (activeButton) {
+            const price = parseFloat(activeButton.dataset.price);
+            const qty = 1; // Cantidad del componente
+            total += price * qty;
+          }
+        });
+        
+        if (total > 0) {
+          priceDisplay.textContent = total.toFixed(2) + '€';
+        }
+      }
+      
+      // Validate before adding to cart
+      form.addEventListener('submit', function(e) {
+        const components = document.querySelectorAll('.bundle-component');
+        let allSelected = true;
+        
+        components.forEach(component => {
+          const hasButtons = component.querySelector('.variant-button');
+          if (hasButtons) {
+            const activeButton = component.querySelector('.variant-button.active');
+            if (!activeButton) {
+              allSelected = false;
+            }
+          }
+        });
+        
+        if (!allSelected) {
+          e.preventDefault();
+          alert('Por favor selecciona todas las opciones del pack');
+          return false;
+        }
+      });
+      
+      // Initialize price on load
+      updateTotalPrice();
+    });
+    </script>
+  {% endif %}
+{% endif %}

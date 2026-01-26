@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bundles Manager</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎁 Bundles Manager</h1>
+      <p class="subtitle">Gestiona tus bundles de productos de forma visual</p>
+    </header>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-value" id="total-bundles">0</div>
+        <div class="stat-label">Total Bundles</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="total-components">0</div>
+        <div class="stat-label">Total Componentes</div>
+      </div>
+    </div>
+
+
+    <div class="actions">
+      <button class="btn btn-primary" onclick="openCreateModal()">+ Crear Bundle</button>
+      <button class="btn btn-secondary" onclick="loadBundles()">🔄 Recargar</button>
+      <button class="btn btn-secondary" id="bulk-status-btn" style="display:none;" onclick="bulkChangeStatus()">⚡ Cambiar Estado</button>
+      <button class="btn btn-danger" id="bulk-delete-btn" style="display:none;" onclick="bulkDelete()">🗑️ Eliminar Seleccionados</button>
+      <button class="btn btn-secondary" onclick="exportCSV()">📥 Exportar CSV</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('csv-import').click()">📤 Importar CSV</button>
+      <input type="file" id="csv-import" accept=".csv" style="display:none;" onchange="importCSV(this)">
+    </div>
+
+
+    <div id="bundles-container" class="bundles-grid"></div>
+    <div id="load-more-container" style="text-align: center; margin-top: 20px; display: none;">
+      <button class="btn btn-secondary" onclick="loadMoreProducts()">📦 Cargar Más Productos</button>
+    </div>
+    <div id="empty-state" class="empty-state" style="display:none;">
+      <h3>No hay bundles</h3>
+      <p>Crea tu primer bundle para comenzar</p>
+    </div>
+  </div>
+
+  <!-- Modal Create Bundle -->
+  <div id="createModal" class="modal">
+    <div class="modal-content modal-large">
+      <span class="close" onclick="closeCreateModal()">&times;</span>
+      <h2>Crear Nuevo Bundle</h2>
+      
+      <!-- Step 1: Select Bundle Product -->
+      <div class="bundle-steps">
+        <div class="step" id="step1">
+          <h3>Paso 1: Configura tu bundle</h3>
+          <p class="step-subtitle">El producto se creará automáticamente en Shopify</p>
+          
+          <!-- Bundle Configuration Fields -->
+          <div class="bundle-config-fields">
+            <div class="form-group">
+              <label for="bundle-name">Nombre del Bundle *</label>
+              <input type="text" id="bundle-name" placeholder="Ej: Pack Gaming Pro" required>
+              <small>Nombre que aparecerá en la tienda</small>
+            </div>
+            
+            <div class="form-group">
+              <label for="bundle-price">Precio del Bundle (€) *</label>
+              <input type="number" id="bundle-price" step="0.01" min="0" placeholder="49.99" required>
+              <small>Precio de venta del bundle completo</small>
+            </div>
+          </div>
+          
+          <div class="modal-actions">
+            <button class="btn btn-primary" onclick="goToStep(2)">Siguiente: Agregar Componentes →</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Add Components -->
+        <div class="step" id="step2" style="display:none;">
+          <h3>Paso 2: Agrega componentes al bundle</h3>
+          <p class="step-subtitle">Busca y selecciona los productos que formarán parte del bundle</p>
+          
+          <div class="search-box">
+            <input type="text" id="component-search" placeholder="Buscar productos...">
+            <button class="btn btn-primary" onclick="searchComponentProducts()">Buscar</button>
+          </div>
+          
+          <div class="components-section">
+            <div class="components-added">
+              <h4>Componentes agregados</h4>
+              <div id="selected-components-list" class="selected-components-list"></div>
+            </div>
+            
+            <div class="components-available">
+              <h4>Productos disponibles</h4>
+              <div id="component-products-grid" class="products-grid"></div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="goToStep(1)">← Atrás</button>
+            <button class="btn btn-primary" onclick="createBundle()">✓ Crear Bundle</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+<!-- Templates Modal -->
+<div id="templatesModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeTemplatesModal()">&times;</span>
+    <h2>Templates de Bundles</h2>
+    
+    <div class="templates-section">
+      <h3>Templates Guardados</h3>
+      <div id="templates-list" class="templates-list">
+        <!-- Templates will be loaded here -->
+      </div>
+      
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeTemplatesModal()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- History Modal -->
+<div id="historyModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeHistoryModal()">&times;</span>
+    <h2>📜 Historial de Cambios</h2>
+    
+    <div id="history-timeline" class="history-timeline">
+      <!-- Timeline will be loaded here -->
+    </div>
+    
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeHistoryModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="csv-handler.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

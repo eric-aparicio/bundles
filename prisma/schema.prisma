@@ -1,0 +1,84 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Shopify Products Cache
+model Product {
+  id            String   @id // gid://shopify/Product/123
+  shopifyId     String   @unique // Numeric ID for easier lookups
+  title         String
+  imageUrl      String?
+  status        String   @default("draft")
+  productType   String?
+  variants      Json     // Store variants as JSON
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  bundle        Bundle?
+  bundleComponents BundleComponent[]
+  
+  @@index([shopifyId])
+  @@index([status])
+}
+
+// Bundle Configuration
+model Bundle {
+  id            String   @id @default(cuid())
+  productId     String   @unique
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price         String   // Store as string to match Shopify format
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  components    BundleComponent[]
+  
+  @@index([status])
+}
+
+// Junction table for Bundle Components
+model BundleComponent {
+  id            String   @id @default(cuid())
+  bundleId      String
+  bundle        Bundle   @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  variantId     String   // gid://shopify/ProductVariant/456
+  productTitle  String   // Cached for performance
+  price         String   // Cached price
+  quantity      Int      @default(1)
+  
+  createdAt     DateTime @default(now())
+  
+  @@unique([bundleId, variantId])
+  @@index([bundleId])
+  @@index([productId])
+}
+
+// Sync Activity Log
+model SyncLog {
+  id            String   @id @default(cuid())
+  type          String   // "initial_sync", "webhook", "manual"
+  topic         String?  // Webhook topic if applicable
+  status        String   // "success", "error", "partial"
+  productsCount Int?
+  bundlesCount  Int?
+  duration      Int?     // Milliseconds
+  error         String?  @db.Text
+  metadata      Json?    // Additional data
+  createdAt     DateTime @default(now())
+  
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}

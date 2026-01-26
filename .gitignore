@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Testing & Development
+test-*.js
+!test-create-order-clean.js
+!test-inspect-metafields.js
+*.test.js
+coverage/
+
+# Build & Deployment
+dist/
+build/
+.vercel/
+.railway/
+
+# Temporary files
+*.txt
+*.log
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Prisma
+prisma/.env
+
+# Optional directories
+shopify-theme/
+api/
+*.log
+.DS_Store
+.env*.local
