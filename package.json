@@ -11,7 +11,8 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:push": "prisma db push",
-    "db:seed": "node scripts/sync.js"
+    "db:seed": "node scripts/sync.js",
+    "sync-inventory": "node cron-sync-inventory.js"
   },
   "keywords": [],
   "author": "",
