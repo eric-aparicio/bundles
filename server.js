@@ -325,7 +325,8 @@ app.post("/api/bundles", async (req, res) => {
         status: "draft",
         variants: [{
           price: bundlePrice,
-          inventory_management: null,
+          inventory_management: 'shopify',
+          inventory_policy: 'deny'
         }]
       }
     };
@@ -400,6 +401,31 @@ app.post("/api/bundles", async (req, res) => {
       console.error(`   Stack trace:`, dbError.stack);
       console.error(`   === DATABASE SAVE ERROR END ===\n`);
       // Don't fail the request - bundle exists in Shopify
+    }
+    
+    // CRITICAL: Calculate and set initial inventory
+    try {
+      console.log(`\n   📊 === CALCULATING INITIAL INVENTORY ===`);
+      
+      const { calculateBundleInventory, updateBundleInventory } = await import('./lib/bundleInventory.js');
+      
+      const bundleConfig = {
+        is_bundle: true,
+        components: components
+      };
+      
+      const inventoryResult = await calculateBundleInventory(bundleConfig, admin);
+      console.log(`   📦 Available: ${inventoryResult.available}`);
+      console.log(`   🔒 Limited by: ${inventoryResult.limitedBy.product}`);
+      
+      await updateBundleInventory(newProduct.id, inventoryResult.available, admin);
+      
+      console.log(`   ✅ Bundle inventory set to: ${inventoryResult.available}`);
+      console.log(`   === INVENTORY CALCULATION COMPLETED ===\n`);
+    } catch (invError) {
+      console.error(`\n   ⚠️ Inventory calculation failed:`, invError.message);
+      console.error(`   Stack:`, invError.stack);
+      // Don't fail the request - bundle exists
     }
     
     console.log(`   ✅ Bundle created successfully!\n`);
