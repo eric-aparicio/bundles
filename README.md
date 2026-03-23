@@ -24,7 +24,7 @@ Componentes:
 
 ## Arquitectura
 
-```
+```text
 ┌─────────────────┐
 │  Admin UI       │ ← Crea/edita bundles
 │  (Frontend)     │
@@ -48,12 +48,12 @@ Componentes:
 - **Database**: PostgreSQL + Prisma ORM
 - **Frontend**: Vanilla HTML/CSS/JS (Admin UI)
 - **Integration**: Shopify Admin API + Webhooks
-- **Deployment**: Railway / Vercel
+- **Deployment**: AWS (App Runner + RDS) / Railway / Vercel
 - **Theme**: Liquid (Shopify)
 
 ## Estructura del Proyecto
 
-```
+```text
 bundles/
 ├── server.js                    # Express server
 ├── lib/                         # Business logic
@@ -86,13 +86,16 @@ Crea un archivo `.env` basado en `.env.example`:
 # Shopify
 SHOP=tu-tienda.myshopify.com
 SHOPIFY_ADMIN_API_ACCESS_TOKEN=shpat_xxxxx
-SHOPIFY_APP_URL=https://tu-app.railway.app
+SHOPIFY_APP_URL=https://tu-app.apprunner.aws
 
 # Database
 DATABASE_URL=postgresql://user:pass@host:5432/db
 
 # Session
 SESSION_SECRET=random-secret-key
+
+# Cron (AWS EventBridge)
+CRON_SECRET=token-seguro-para-cron
 
 # Server
 PORT=3000
@@ -125,7 +128,7 @@ npm run dev
 
 ### 1. Subir archivos del tema
 
-```
+```text
 theme/snippets/bundle-customizer.liquid → Themes > Edit code > snippets/
 theme/sections/main-order.liquid → Themes > Edit code > sections/
 ```
@@ -180,7 +183,24 @@ npm run prisma:studio
 
 ## Deployment
 
-### Railway (Recomendado)
+### AWS Servidor (Recomendado)
+
+Si ya tienes servidor en AWS (EC2), sigue [AWS_SETUP.md](AWS_SETUP.md):
+
+1. Preparar EC2 + RDS
+2. Configurar `.env` en servidor
+3. Levantar app con PM2 (`ecosystem.config.cjs`)
+4. Publicar con Nginx + SSL
+5. Actualizar webhooks Shopify
+6. Configurar cron quincenal
+
+Arranque productivo:
+
+```bash
+npm run start:aws
+```
+
+### Railway (Alternativa)
 
 1. Conecta el repositorio GitHub
 2. Railway detecta automáticamente `package.json`
@@ -211,8 +231,8 @@ node test-inspect-metafields.js
 # Verificar webhooks en Shopify Admin
 # Settings > Notifications > Webhooks
 
-# Ver logs de Railway
-# Dashboard > Logs
+# Ver logs en servidor AWS (PM2)
+# pm2 logs bundles-v2 --lines 100
 ```
 
 ## Documentación Completa

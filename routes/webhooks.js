@@ -1,9 +1,34 @@
 import { Router } from "express";
 import { isBundleVariant } from "../lib/bundles.js";
-import { syncBundleInventory, restoreBundleInventory, getDefaultLocation, adjustInventory } from "../lib/inventory.js";
+import { syncBundleInventory, restoreBundleInventory, getDefaultLocation, adjustInventory, getInventoryItemId } from "../lib/inventory.js";
 import { createRestClient } from "../lib/shopify.js";
 
 const router = Router();
+
+function normalizeLineItemProperties(properties) {
+  if (Array.isArray(properties)) {
+    return properties
+      .filter((property) => property && property.name)
+      .map((property) => ({
+        name: String(property.name),
+        value: String(property.value ?? ""),
+      }));
+  }
+
+  if (properties && typeof properties === "object") {
+    return Object.entries(properties).map(([name, value]) => ({
+      name: String(name),
+      value: String(value ?? ""),
+    }));
+  }
+
+  return [];
+}
+
+function getPropertyValue(properties, name) {
+  const found = properties.find((property) => property.name === name);
+  return found ? found.value : null;
+}
 
 /**
  * Webhook: orders/create
@@ -28,9 +53,13 @@ router.post("/orders/create", async (req, res) => {
       if (!isBundle) continue;
 
       console.log(`   🎁 Bundle: ${item.title}`);
+      const normalizedProperties = normalizeLineItemProperties(item.properties);
+      const customizationFlag = getPropertyValue(normalizedProperties, "_bundle_customization");
+      const hasItemProperties = normalizedProperties.some((property) => /^Item\s+\d+$/i.test(property.name));
+      const hasCustomization = customizationFlag === "true" || hasItemProperties;
       
       // Check if customer selected custom variants
-      if (item.properties && item.properties._bundle_customization === 'true') {
+      if (hasCustomization) {
         console.log(`   🎨 Custom variants selected`);
         
         if (!config || !config.components) {
@@ -47,7 +76,8 @@ router.post("/orders/create", async (req, res) => {
           
           // Find the property value for this component
           // Format is "1 x PRODUCT_NAME VARIANT" or just "VARIANT"
-          const propertyValue = item.properties[componentName];
+          const propertyValue = getPropertyValue(normalizedProperties, componentName)
+            || getPropertyValue(normalizedProperties, `Item ${i + 1}`);
           
           if (!propertyValue) {
             console.log(`   ⚠️ No property found for ${componentName}`);
@@ -56,14 +86,12 @@ router.post("/orders/create", async (req, res) => {
           
           // Extract variant from "1 x Product Variant" format
           let variantValue = propertyValue;
-          if (propertyValue.includes(' x ')) {
-            // Format: "1 x PRODUCT_NAME VARIANT"
-            const parts = propertyValue.split(' x ');
-            if (parts.length > 1) {
-              // Get everything after "1 x PRODUCT_NAME "
-              const afterProduct = parts[1].replace(componentName, '').trim();
-              variantValue = afterProduct;
-            }
+          const qtyPrefixMatch = variantValue.match(/^\s*\d+\s*x\s*/i);
+          if (qtyPrefixMatch) {
+            variantValue = variantValue.slice(qtyPrefixMatch[0].length).trim();
+          }
+          if (variantValue.startsWith(componentName)) {
+            variantValue = variantValue.slice(componentName.length).trim();
           }
           
           // Find matching variant in available_variants
@@ -71,10 +99,14 @@ router.post("/orders/create", async (req, res) => {
           
           if (component.available_variants && component.available_variants.length > 0) {
             const matchedVariant = component.available_variants.find(v => {
-              const variantTitle = v.title.split(' - ').pop();
-              return variantTitle === variantValue || 
-                     v.title.includes(variantValue) ||
-                     variantValue.includes(variantTitle);
+              const variantTitle = v.title.split(' - ').pop()?.trim() || '';
+              const normalizedVariantValue = variantValue.toLowerCase();
+              const normalizedVariantTitle = variantTitle.toLowerCase();
+              const normalizedFullTitle = v.title.toLowerCase();
+
+              return normalizedVariantTitle === normalizedVariantValue
+                     || normalizedFullTitle.includes(normalizedVariantValue)
+                     || normalizedVariantValue.includes(normalizedVariantTitle);
             });
             
             if (matchedVariant) {
@@ -91,7 +123,8 @@ router.post("/orders/create", async (req, res) => {
             selectedVariants.push({
               name: componentName,
               value: propertyValue,
-              variantId: matchedVariantId
+              variantId: matchedVariantId,
+              quantity: component.quantity || 1,
             });
             console.log(`   ✓ ${propertyValue} -> ${matchedVariantId}`);
           }
@@ -100,7 +133,9 @@ router.post("/orders/create", async (req, res) => {
         // Deduct stock from selected variants
         for (const variant of selectedVariants) {
           try {
-            await adjustInventory(variant.variantId, -item.quantity, locationId, admin);
+            const inventoryItemId = await getInventoryItemId(variant.variantId, admin);
+            const totalToDeduct = variant.quantity * item.quantity;
+            await adjustInventory(inventoryItemId, locationId, -totalToDeduct, admin);
           } catch (error) {
             console.error(`   ❌ Error adjusting ${variant.variantId}:`, error.message);
           }

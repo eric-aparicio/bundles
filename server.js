@@ -642,6 +642,33 @@ app.post("/api/sync", async (req, res) => {
   }
 });
 
+// Trigger bi-weekly inventory sync (for AWS EventBridge Scheduler)
+app.post("/api/trigger-sync-inventory", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const expected = process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : null;
+
+    if (!expected || authHeader !== expected) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const { syncInventoryBiWeekly } = await import("./cron-sync-inventory.js");
+
+    syncInventoryBiWeekly()
+      .then(() => console.log("✅ Scheduled inventory sync completed"))
+      .catch((error) => console.error("❌ Scheduled inventory sync failed:", error.message));
+
+    return res.json({
+      success: true,
+      message: "Inventory sync started",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Error triggering scheduled inventory sync:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Start server
 if (!process.env.VERCEL) {
   app.listen(PORT, async () => {
