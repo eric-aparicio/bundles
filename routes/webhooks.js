@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { isBundleVariant } from "../lib/bundles.js";
 import { syncBundleInventory, restoreBundleInventory, getDefaultLocation, adjustInventory, getInventoryItemId } from "../lib/inventory.js";
-import { createRestClient } from "../lib/shopify.js";
+import { createRestClient, getAccessToken } from "../lib/shopify.js";
 
 const router = Router();
 
@@ -38,7 +38,7 @@ router.post("/orders/create", async (req, res) => {
   try {
     const payload = req.body;
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
 
     console.log(`\n🔔 Webhook: orders/create`);
     console.log(`   Order ID: ${payload.id}`);
@@ -161,7 +161,7 @@ router.post("/orders/cancelled", async (req, res) => {
   try {
     const payload = req.body;
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
 
     console.log(`\n🔔 Webhook: orders/cancelled`);
     console.log(`   Order ID: ${payload.id}`);

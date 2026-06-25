@@ -167,11 +167,7 @@ function displayComponentProducts(products) {
     // Create selectable variants if product has multiple
     if (product.variants && product.variants.length > 1) {
       return product.variants.map(variant => `
-        <div class="product-card" onclick='addComponent(${JSON.stringify({
-          variant_id: variant.id,
-          product_title: `${product.title} - ${variant.title}`,
-          price: variant.price
-        }).replace(/'/g, "\\'")})'>
+        <div class="product-card" onclick='addComponent(JSON.parse(decodeURIComponent("${encodeURIComponent(JSON.stringify({variant_id: variant.id, product_title: product.title + " - " + variant.title, price: variant.price}))}")))'>
           ${product.image ? 
             `<img src="${product.image}" alt="${product.title}">` : 
             ''}
@@ -183,11 +179,7 @@ function displayComponentProducts(products) {
       // Single variant product
       const variant = product.variants?.[0];
       return `
-        <div class="product-card" onclick='addComponent(${JSON.stringify({
-          variant_id: variant?.id || product.id,
-          product_title: product.title,
-          price: variant?.price || '0'
-        }).replace(/'/g, "\\'")})'>
+        <div class="product-card" onclick='addComponent(JSON.parse(decodeURIComponent("${encodeURIComponent(JSON.stringify({variant_id: variant?.id || product.id, product_title: product.title, price: variant?.price || "0"}))}")))'>
           ${product.image ? 
             `<img src="${product.image}" alt="${product.title}">` : 
             ''}
@@ -784,39 +776,10 @@ async function exportCSV() {
 
 // Import bundles from CSV
 async function importCSV(input) {
-  const file = input.files[0];
-  if (!file) return;
-  
-  const formData = new FormData();
-  formData.append('csv', file);
-  
-  try {
-    const response = await fetch('/api/bundles/import', {
-      method: 'POST',
-      body: formData
-    });
-    
-    const data = await response.json();
-    
-    if (data.success) {
-      Swal.fire({
-        icon: 'success',
-        title: 'Importado',
-        html: `
-          <p>Bundles importados: ${data.created}</p>
-          <p>Errores: ${data.errors}</p>
-        `,
-        timer: 3000
-      });
-      loadBundles();
-    } else {
-      showError(data.message);
-    }
-  } catch (error) {
-    showError('Error al importar CSV');
+  if (typeof importCSVFromHandler === 'function') {
+    return importCSVFromHandler(input);
   }
-  
-  input.value = ''; // Reset input
+  input.value = '';
 }
 
 // Update bulk buttons visibility

@@ -13,7 +13,7 @@ import prisma from '../lib/db.js';
 dotenv.config();
 
 const SHOP = process.env.SHOP;
-const ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+const ACCESS_TOKEN = await getAccessToken();
 
 async function syncProducts() {
   console.log('📦 Starting product sync...');

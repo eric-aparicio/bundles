@@ -1,9 +1,9 @@
 module.exports = {
   apps: [
     {
-      name: "bundles-v2",
+      name: "bundles-app",
       script: "server.js",
-      cwd: "/var/www/bundles-v2",
+      cwd: "/var/www/bundles",
       instances: 1,
       exec_mode: "fork",
       autorestart: true,

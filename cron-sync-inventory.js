@@ -9,7 +9,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import dotenv from "dotenv";
-import { createRestClient } from "./lib/shopify.js";
+import { createRestClient, getAccessToken } from './lib/shopify.js';
 
 dotenv.config();
 
@@ -24,7 +24,8 @@ async function syncInventoryBiWeekly() {
   console.log(`📅 Date: ${new Date().toISOString()}`);
   console.log(`🏪 Shop: ${process.env.SHOP}\n`);
   
-  const admin = createRestClient(process.env.SHOP, process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN);
+  const accessToken = await getAccessToken();
+  const admin = createRestClient(process.env.SHOP, accessToken);
   
   let updatedCount = 0;
   let errorCount = 0;

@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import fetch from "node-fetch";
 import FormData from "form-data";
-import { createRestClient } from "../lib/shopify.js";
+import { createRestClient, getAccessToken } from '../lib/shopify.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -18,7 +18,7 @@ router.post("/:id/image", upload.single('image'), async (req, res) => {
     }
     
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     
     // Upload image to Shopify
     const formData = new FormData();
@@ -57,7 +57,7 @@ router.get("/:id/analytics", async (req, res) => {
     const numericId = bundleId.includes("gid://") ? bundleId.split("/").pop() : bundleId;
     
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     const admin = createRestClient(shop, accessToken);
     
     // Get orders containing this product

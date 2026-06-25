@@ -119,7 +119,7 @@ async function exportCSV() {
 /**
  * Import bundles from CSV file
  */
-async function importCSV(input) {
+async function importCSVFromHandler(input) {
   const file = input.files[0];
   if (!file) return;
 

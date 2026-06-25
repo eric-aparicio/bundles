@@ -11,7 +11,7 @@ const router = Router();
 router.get("/bundles", async (req, res) => {
   try {
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     
     const admin = createGraphQLClient(shop, accessToken);
     const bundles = await getAllBundles(admin, 100);
@@ -36,7 +36,7 @@ router.post("/bundles", async (req, res) => {
     }
     
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     
     const admin = createGraphQLClient(shop, accessToken);
     await saveBundleConfig(productId, components, admin);
@@ -61,7 +61,7 @@ router.delete("/bundles", async (req, res) => {
     }
     
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     
     const admin = createGraphQLClient(shop, accessToken);
     await deleteBundleConfig(bundleId, admin);

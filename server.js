@@ -1,3 +1,4 @@
+import prisma from "./lib/db.js";
 import express from "express";
 import session from "express-session";
 import cookieParser from "cookie-parser";
@@ -6,7 +7,7 @@ import webhooksRouter from "./routes/webhooks.js";
 import csvRouter from "./routes/csv.js";
 import imagesAnalyticsRouter from "./routes/images-analytics.js";
 import { getAllBundles, getBundleConfig, saveBundleConfig, deleteBundleConfig, getProductVariants } from "./lib/bundles.js";
-import { createRestClient } from "./lib/shopify.js";
+import { createRestClient, getAccessToken } from './lib/shopify.js';
 import { checkAndSyncDatabase, syncFromShopify } from "./lib/autoSync.js";
 
 // Load environment variables
@@ -194,7 +195,7 @@ app.get("/api/products/:id/variants", async (req, res) => {
   try {
     const productId = req.params.id;
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     const admin = createRestClient(shop, accessToken);
     
     const variants = await getProductVariants(productId, admin);
@@ -207,11 +208,152 @@ app.get("/api/products/:id/variants", async (req, res) => {
 });
 
 
+// POST /api/bundles/import - Bulk import bundles from CSV
+app.post("/api/bundles/import", async (req, res) => {
+  try {
+    const { bundles } = req.body;
+    if (!bundles || !Array.isArray(bundles)) {
+      return res.status(400).json({ success: false, message: "Invalid data format" });
+    }
+
+    const shop = process.env.SHOP;
+    const accessToken = await getAccessToken();
+    const admin = createRestClient(shop, accessToken);
+
+    console.log(`\n📥 Importing ${bundles.length} bundles from CSV...`);
+    console.log('First bundle:', JSON.stringify(bundles[0], null, 2));
+    let created = 0, errors = 0;
+
+    for (const bundleData of bundles) {
+      try {
+        const { bundleName, bundlePrice, components, status } = bundleData;
+        const productData = {
+          product: {
+            title: bundleName,
+            product_type: "Bundle",
+            status: status || "draft",
+            variants: [{ price: bundlePrice, inventory_management: null }]
+          }
+        };
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const createResult = await admin.post('/products.json', productData);
+        const productId = `gid://shopify/Product/${createResult.product.id}`;
+
+        await new Promise(resolve => setTimeout(resolve, 300));
+        // Enriquecer componentes con product_id desde DB
+        const enrichedComponents = await Promise.all(components.map(async (c) => {
+          try {
+            // Buscar producto con variantes usando JSON_SEARCH de MySQL
+            const results = await prisma.$queryRaw`
+              SELECT id, title, variants, imageUrl FROM Product 
+              WHERE JSON_SEARCH(variants, 'one', ${c.variant_id}) IS NOT NULL
+              LIMIT 1
+            `;
+            let productByTitle = results[0] || null;
+            // Fallback por título si no encontramos por variant_id
+            if (!productByTitle) {
+              const titleSearch = c.product_title.split(' - ')[0];
+              const titleResults = await prisma.$queryRaw`
+                SELECT id, title, variants, imageUrl FROM Product 
+                WHERE title LIKE ${`%${titleSearch}%`}
+                LIMIT 1
+              `;
+              productByTitle = titleResults[0] || null;
+            }
+            let componentPrice = '0';
+            let componentImage = null;
+            if (productByTitle) {
+              const variants = Array.isArray(productByTitle.variants) ? productByTitle.variants : [];
+              const matchingVariant = variants.find(v => v.id === c.variant_id)
+                || variants.find(v => String(v.shopifyId) === c.variant_id.split('/').pop())
+                || variants[0];
+              if (matchingVariant?.price) componentPrice = String(matchingVariant.price);
+              componentImage = productByTitle.imageUrl || null;
+            }
+            console.log(`   🔍 Component ${c.product_title}: ${productByTitle?.id || 'NOT FOUND'} price:${componentPrice}`);
+            return {
+              ...c,
+              product_id: productByTitle?.id || null,
+              price: componentPrice,
+              image: componentImage
+            };
+          } catch(e) {
+            console.error(`   ⚠️ Error enriching ${c.product_title}:`, e.message);
+            return { ...c, product_id: null, price: '0' };
+          }
+        }));
+
+        await saveBundleConfig(productId, enrichedComponents, admin);
+
+        // Guardar en DB local
+        await prisma.product.upsert({
+          where: { id: productId },
+          create: {
+            id: productId,
+            shopifyId: String(createResult.product.id),
+            title: bundleName,
+            status: status || 'draft',
+            variants: createResult.product.variants || [],
+          },
+          update: {
+            title: bundleName,
+            status: status || 'draft',
+            updatedAt: new Date(),
+          }
+        });
+
+        await prisma.bundle.upsert({
+          where: { productId },
+          create: {
+            productId,
+            price: String(bundlePrice),
+            status: 'active',
+          },
+          update: {
+            price: String(bundlePrice),
+            updatedAt: new Date(),
+          }
+        });
+
+        // Guardar componentes en DB
+        const savedBundle2 = await prisma.bundle.findUnique({ where: { productId } });
+        if (savedBundle2) {
+          const validComps = enrichedComponents.filter(c => c.product_id);
+          console.log(`   💾 Saving ${validComps.length} components, bundleId: ${savedBundle2.id}`);
+          for (const c of validComps) {
+            try {
+              await prisma.bundleComponent.upsert({
+                where: { bundleId_variantId: { bundleId: savedBundle2.id, variantId: c.variant_id } },
+                create: { bundleId: savedBundle2.id, productId: c.product_id, variantId: c.variant_id, productTitle: c.product_title, price: String(c.price||"0"), quantity: c.quantity||1 },
+                update: { quantity: c.quantity||1, price: String(c.price||"0") }
+              });
+            } catch(e) { console.error(`   ⚠️ comp error: ${e.message}`); }
+          }
+        }
+        created++;
+        console.log(`   ✅ ${bundleName}`);
+      } catch (error) {
+        errors++;
+        console.error(`   ❌ ${bundleData.bundleName}: ${error.message}`);
+      }
+    }
+
+    console.log(`\n✅ Import: ${created} created, ${errors} errors`);
+    res.json({ success: true, created, errors });
+  } catch (error) {
+    console.error("Error importing bundles:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.use("/api/bundles", csvRouter);
+
 app.get("/api/bundles/:id", async (req, res) => {
   try {
     const bundleId = req.params.id;
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     
     const admin = createRestClient(shop, accessToken);
     
@@ -252,7 +394,7 @@ app.post("/api/bundles", async (req, res) => {
     }
     
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     const admin = createRestClient(shop, accessToken);
     
     console.log(`\n📦 Creating bundle: ${bundleName}`);
@@ -453,54 +595,7 @@ app.post("/api/bundles", async (req, res) => {
   }
 });
 
-// POST /api/bundles/import - Bulk import bundles from CSV
-app.post("/api/bundles/import", async (req, res) => {
-  try {
-    const { bundles } = req.body;
-    if (!bundles || !Array.isArray(bundles)) {
-      return res.status(400).json({ success: false, message: "Invalid data format" });
-    }
 
-    const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
-    const admin = createRestClient(shop, accessToken);
-
-    console.log(`\n📥 Importing ${bundles.length} bundles from CSV...`);
-    let created = 0, errors = 0;
-
-    for (const bundleData of bundles) {
-      try {
-        const { bundleName, bundlePrice, components, status } = bundleData;
-        const productData = {
-          product: {
-            title: bundleName,
-            product_type: "Bundle",
-            status: status || "draft",
-            variants: [{ price: bundlePrice, inventory_management: null }]
-          }
-        };
-
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const createResult = await admin.post('/products.json', productData);
-        const productId = `gid://shopify/Product/${createResult.product.id}`;
-
-        await new Promise(resolve => setTimeout(resolve, 300));
-        await saveBundleConfig(productId, components, admin);
-        created++;
-        console.log(`   ✅ ${bundleName}`);
-      } catch (error) {
-        errors++;
-        console.error(`   ❌ ${bundleData.bundleName}: ${error.message}`);
-      }
-    }
-
-    console.log(`\n✅ Import: ${created} created, ${errors} errors`);
-    res.json({ success: true, created, errors });
-  } catch (error) {
-    console.error("Error importing bundles:", error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
 
 
 // PUT /api/bundles/:id - Update existing bundle
@@ -514,7 +609,7 @@ app.put("/api/bundles/:id", async (req, res) => {
     }
     
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     const admin = createRestClient(shop, accessToken);
     
     // Extract numeric ID
@@ -553,7 +648,7 @@ app.delete("/api/bundles", async (req, res) => {
     }
     
     const shop = process.env.SHOP;
-    const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+    const accessToken = await getAccessToken();
     
     const admin = createRestClient(shop, accessToken);
     
@@ -612,23 +707,7 @@ app.post("/api/admin/force-sync", async (req, res) => {
 
 // Webhooks routes
 app.use("/webhooks", webhooksRouter);
-app.use("/api/bundles", csvRouter);
 app.use("/api/bundles", imagesAnalyticsRouter);
-
-// 404 handler
-app.use((req, res) => {
-  // Try to serve index.html for HTML requests, otherwise 404
-  if (req.accepts('html')) {
-    return res.sendFile("index.html", { root: "public" });
-  }
-  res.status(404).json({ error: "Not found" });
-});
-
-// Error handler
-app.use((err, req, res, next) => {
-  console.error("Server error:", err);
-  res.status(500).json({ error: "Internal server error" });
-});
 
 // Manual sync endpoint
 app.post("/api/sync", async (req, res) => {
@@ -642,7 +721,6 @@ app.post("/api/sync", async (req, res) => {
   }
 });
 
-// Trigger bi-weekly inventory sync (for AWS EventBridge Scheduler)
 app.post("/api/trigger-sync-inventory", async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -668,6 +746,26 @@ app.post("/api/trigger-sync-inventory", async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// 404 handler
+app.use((req, res) => {
+  // Try to serve index.html for HTML requests, otherwise 404
+  if (req.accepts('html')) {
+    return res.sendFile("index.html", { root: "public" });
+  }
+  res.status(404).json({ error: "Not found" });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error("Server error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+
+
+// Trigger bi-weekly inventory sync (for AWS EventBridge Scheduler)
+
 
 // Start server
 if (!process.env.VERCEL) {

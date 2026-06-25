@@ -4,13 +4,13 @@
  */
 
 import dotenv from 'dotenv';
-import { createRestClient } from '../lib/shopify.js';
+import { createRestClient, getAccessToken } from '../lib/shopify.js';
 
 dotenv.config();
 
 async function createMetafieldDefinition() {
   const shop = process.env.SHOP;
-  const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+  const accessToken = await getAccessToken();
   const admin = createRestClient(shop, accessToken);
 
   console.log('\n📝 Creating bundle_config metafield definition in Shopify...\n');

@@ -4,7 +4,7 @@
  */
 
 import dotenv from 'dotenv';
-import { createRestClient } from '../lib/shopify.js';
+import { createRestClient, getAccessToken } from '../lib/shopify.js';
 import { bulkUpsertProducts } from '../lib/database/products.js';
 import { createBundle } from '../lib/database/bundles.js';
 import prisma from '../lib/db.js';
@@ -13,7 +13,7 @@ dotenv.config();
 
 async function syncAllBundles() {
   const shop = process.env.SHOP;
-  const accessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+  const accessToken = await getAccessToken();
   const admin = createRestClient(shop, accessToken);
 
   console.log('\n🔄 Syncing ALL bundles from Shopify to PostgreSQL...\n');
